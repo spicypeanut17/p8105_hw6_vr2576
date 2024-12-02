@@ -14,6 +14,8 @@ library(tidyverse)
 library(rvest)
 library(broom)
 library(rnoaa)
+library(readr)
+library(purrr)
 
 ```
 
@@ -78,5 +80,82 @@ ci_results <- bootstrap_results %>%
   )
 
 ```
+
+
+## Problem 2: Homicide Data Analysis
+
+```{r q2, message = FALSE}
+
+# Load and clean data
+homicides_data = read_csv("data/homicide-data.csv") %>%
+  filter(victim_race %in% c("White", "Black")) %>%
+  mutate(victim_sex = factor(victim_sex, levels = c("Male", "Female")),  
+        victim_sex = fct_drop(victim_sex),  # Drop the "Unknown" level
+        victim_race = factor(victim_race, levels = c("White", "Black")),
+    city_state = str_c(city, state, sep = ", "),
+    resolved = if_else(disposition == "Closed by arrest", 1, 0),
+    victim_age = as.numeric(victim_age)) %>%
+  filter(!city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL")) 
+
+head(homicides_data)
+
+
+## Baltimore data subset
+baltimore_data = homicides_data %>%
+  filter(city_state == "Baltimore, MD")
+
+# Fit logistic regression model
+baltimore_glm = glm(resolved ~ victim_age + victim_sex + victim_race, 
+                    family = binomial(), 
+                    data = baltimore_data)
+baltimore_results = broom::tidy(baltimore_glm, exponentiate = TRUE, conf.int = TRUE)
+baltimore_results
+
+# Estimate and confidence interval for adjusted odds ratio for male vs. female
+odds_ratio_baltimore = exp(baltimore_results %>% 
+                           filter(term == "victim_sexFemale") %>% 
+                           select(estimate, conf.low, conf.high))
+odds_ratio_baltimore
+
+
+## All cities
+# Run logistic regression for each city and extract OR for sex
+city_results = homicides_data %>%
+  group_by(city_state) %>%
+  nest() %>%
+  mutate(glm_model = map(data, ~ glm(resolved ~ victim_age + victim_sex + victim_race, 
+                                     data = ., 
+                                     family = binomial)),
+         or_results = map(glm_model, ~ tidy(., exponentiate = TRUE, conf.int = TRUE) %>%
+                           filter(str_detect(term, "victim_sexFemale")))) %>%
+  unnest(or_results)
+head(city_results)
+
+
+# Plot the ORs with CIs for each city
+city_results %>%
+  ggplot(aes(x = city_state, y = estimate, ymin = conf.low, ymax = conf.high)) +
+  geom_pointrange(position = position_dodge(width = 0.7)) +
+  coord_flip() +  
+  labs(title = "Adjusted Odds Ratios for Male vs Female in Resolved Homicides",
+    x = "City",
+    y = "Odds Ratio (Female vs Male)") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8))
+
+
+```
+
+**Baltimore:**
+Female victims are 10.5 times more likely to have their homicides resolved than male victims. The confidence interval (6.01, 21.9) suggests that this result is statistically significant and points to a substantial gender disparity in homicide resolution rates.
+
+**Adjusted Odds Ratios for Male vs Female in Resolved Homicides:**
+Long Beach, CA, and New York, NY have the largest confidence intervals for the adjusted odds of resolved homicides by sex. This greater uncertainty in the estimate for these cities could be potentially due to higher data variability.
+
+Indianapolis, IN, and Houston, TX are shown to have the smallest confidence intervals, suggesting that the estimates for these cities are more precise with less variability in the data.
+
+Among the cities analyzed, New York, NY has the highest adjusted odds ratio (3.81) for resolved homicides by sex, meaning that women in New York City have a significantly higher likelihood of their homicides being solved compared to men. The confidence interval (2.06, 7.53) for New York also suggests that this result is statistically significant. 
+
+In contrast, Albuquerque, NM has the lowest adjusted odds ratio (0.566), indicating that women in this city are much less likely to have their homicides solved compared to men. 
 
 
