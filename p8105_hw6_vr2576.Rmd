@@ -1,0 +1,18 @@
+---
+title: "P8105 Homework 6"
+author: "Vaiju Raja (vr2576)"
+date: "2024-12-02"
+output: github_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r lib}
+
+library(tidyverse)
+library(rvest)
+library(broom)
+
+```
+
